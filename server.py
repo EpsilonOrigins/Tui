@@ -12,7 +12,7 @@ import asyncio
 import threading
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import uvicorn
 
@@ -28,6 +28,15 @@ class Message(BaseModel):
     text: str
 
 
+# ── State ────────────────────────────────────────────────────────────────────
+VALID_ACTIONS = ("launch", "init", "start", "stop")
+
+app_state: dict = {
+    "status": "idle",
+    "action_log": [],
+}
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 async def broadcast(payload: dict) -> None:
     """Send a JSON payload to every connected WebSocket client."""
@@ -41,17 +50,60 @@ async def broadcast(payload: dict) -> None:
         connected_clients.remove(ws)
 
 
-# ── REST endpoint ────────────────────────────────────────────────────────────
+def _execute_action(action: str) -> dict:
+    """Run an action and return the result payload."""
+    now = datetime.now(timezone.utc).isoformat()
+    previous = app_state["status"]
+
+    if action == "launch":
+        app_state["status"] = "launched"
+    elif action == "init":
+        app_state["status"] = "initialized"
+    elif action == "start":
+        app_state["status"] = "running"
+    elif action == "stop":
+        app_state["status"] = "stopped"
+
+    entry = {"action": action, "previous": previous, "new": app_state["status"], "timestamp": now}
+    app_state["action_log"].append(entry)
+
+    return {
+        "type": "action",
+        "action": action,
+        "previous_status": previous,
+        "status": app_state["status"],
+        "timestamp": now,
+    }
+
+
+# ── REST endpoints ───────────────────────────────────────────────────────────
 @app.post("/messages")
 async def post_message(msg: Message) -> dict:
     """Accept a message via HTTP POST and broadcast it to all WebSocket clients."""
     payload = {
+        "type": "message",
         "username": msg.username,
         "text": msg.text,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     await broadcast(payload)
     return {"status": "ok", "message": payload}
+
+
+@app.post("/actions/{action}")
+async def post_action(action: str) -> dict:
+    """Execute an action (launch, init, start, stop) and broadcast the state change."""
+    if action not in VALID_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action}. Valid: {VALID_ACTIONS}")
+    payload = _execute_action(action)
+    await broadcast(payload)
+    return {"status": "ok", **payload}
+
+
+@app.get("/status")
+async def get_status() -> dict:
+    """Return current app state."""
+    return {"status": app_state["status"], "action_log": app_state["action_log"]}
 
 
 # ── WebSocket endpoint ───────────────────────────────────────────────────────

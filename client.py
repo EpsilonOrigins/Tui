@@ -1,5 +1,9 @@
 """Textual TUI client that POSTs messages to the FastAPI server and receives
-WebSocket updates in real time."""
+WebSocket updates in real time.
+
+Commands (type in the message input):
+  /launch  /init  /start  /stop
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,7 @@ from textual.widgets import Footer, Header, Input, RichLog, Static
 
 SERVER_URL = "http://localhost:8000"
 WS_URL = "ws://localhost:8000/ws"
+COMMANDS = {"/launch", "/init", "/start", "/stop"}
 
 
 class ChatApp(App):
@@ -48,6 +53,7 @@ class ChatApp(App):
 
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
+        ("ctrl+l", "focus_input", "Focus input"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -57,11 +63,17 @@ class ChatApp(App):
             Static("Connecting...", id="status"),
             Horizontal(
                 Input(placeholder="Username", id="username", value="user1"),
-                Input(placeholder="Type a message...", id="message"),
+                Input(
+                    placeholder="Message or /launch /init /start /stop",
+                    id="message",
+                ),
                 id="input-area",
             ),
         )
         yield Footer()
+
+    def action_focus_input(self) -> None:
+        self.query_one("#message", Input).focus()
 
     def on_mount(self) -> None:
         self.listen_ws()
@@ -79,17 +91,27 @@ class ChatApp(App):
                     try:
                         async for raw in ws:
                             data = json.loads(raw)
-                            ts = data.get("timestamp", "")
-                            user = data.get("username", "?")
-                            text = data.get("text", "")
-                            log.write(f"[bold]{user}[/bold] ({ts}): {text}")
+                            if data.get("type") == "action":
+                                action = data.get("action", "?")
+                                prev = data.get("previous_status", "?")
+                                new = data.get("status", "?")
+                                ts = data.get("timestamp", "")
+                                log.write(
+                                    f"[bold yellow]>> {action}[/bold yellow] "
+                                    f"[dim]{prev} -> {new}[/dim] ({ts})"
+                                )
+                            else:
+                                ts = data.get("timestamp", "")
+                                user = data.get("username", "?")
+                                text = data.get("text", "")
+                                log.write(f"[bold]{user}[/bold] ({ts}): {text}")
                     except websockets.ConnectionClosed:
                         status.update("Disconnected – reconnecting...")
             except Exception:
                 status.update("Cannot reach server – retrying...")
                 await asyncio.sleep(2)
 
-    # ── Send message on Enter ────────────────────────────────────────────────
+    # ── Send message or command on Enter ─────────────────────────────────────
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "message":
             return
@@ -98,11 +120,27 @@ class ChatApp(App):
         if not text:
             return
 
-        username = self.query_one("#username", Input).value.strip() or "anon"
         event.input.value = ""
-
         status = self.query_one("#status", Static)
 
+        # Route /commands to the action endpoint
+        if text in COMMANDS:
+            action = text.lstrip("/")
+            await self._send_action(action, status)
+        else:
+            username = self.query_one("#username", Input).value.strip() or "anon"
+            await self._send_message(username, text, status)
+
+    async def _send_action(self, action: str, status: Static) -> None:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(f"{SERVER_URL}/actions/{action}")
+                resp.raise_for_status()
+                status.update(f"Action '{action}' executed")
+        except httpx.HTTPError as exc:
+            status.update(f"Action failed: {exc}")
+
+    async def _send_message(self, username: str, text: str, status: Static) -> None:
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
