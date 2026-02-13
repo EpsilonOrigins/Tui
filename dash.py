@@ -10,24 +10,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import asyncio
+import json
 import threading
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
-import uvicorn
+from flask import Flask, jsonify, request
+from flask_sock import Sock
 
-app = FastAPI(title="Dash")
+app = Flask(__name__)
+sock = Sock(app)
 
 # ── Connected WebSocket clients ──────────────────────────────────────────────
-connected_clients: list[WebSocket] = []
-
-
-# ── Models ───────────────────────────────────────────────────────────────────
-class Message(BaseModel):
-    username: str
-    text: str
+connected_clients: list = []
+clients_lock = threading.Lock()
 
 
 # ── State ────────────────────────────────────────────────────────────────────
@@ -40,16 +35,18 @@ app_state: dict = {
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-async def broadcast(payload: dict) -> None:
+def broadcast(payload: dict) -> None:
     """Send a JSON payload to every connected WebSocket client."""
-    disconnected: list[WebSocket] = []
-    for ws in connected_clients:
-        try:
-            await ws.send_json(payload)
-        except Exception:
-            disconnected.append(ws)
-    for ws in disconnected:
-        connected_clients.remove(ws)
+    message = json.dumps(payload)
+    disconnected: list = []
+    with clients_lock:
+        for ws in connected_clients:
+            try:
+                ws.send(message)
+            except Exception:
+                disconnected.append(ws)
+        for ws in disconnected:
+            connected_clients.remove(ws)
 
 
 def _execute_action(action: str) -> dict:
@@ -80,56 +77,61 @@ def _execute_action(action: str) -> dict:
 
 # ── REST endpoints ───────────────────────────────────────────────────────────
 @app.post("/messages")
-async def post_message(msg: Message) -> dict:
+def post_message():
     """Accept a message via HTTP POST and broadcast it to all WebSocket clients."""
+    data = request.get_json()
+    if not data or "username" not in data or "text" not in data:
+        return jsonify({"detail": "username and text are required"}), 400
     payload = {
         "type": "message",
-        "username": msg.username,
-        "text": msg.text,
+        "username": data["username"],
+        "text": data["text"],
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    await broadcast(payload)
-    return {"status": "ok", "message": payload}
+    broadcast(payload)
+    return jsonify({"status": "ok", "message": payload})
 
 
-@app.post("/actions/{action}")
-async def post_action(action: str) -> dict:
+@app.post("/actions/<action>")
+def post_action(action: str):
     """Execute an action (launch, init, start, stop) and broadcast the state change."""
     if action not in VALID_ACTIONS:
-        raise HTTPException(status_code=400, detail=f"Unknown action: {action}. Valid: {VALID_ACTIONS}")
+        return jsonify({"detail": f"Unknown action: {action}. Valid: {VALID_ACTIONS}"}), 400
     payload = _execute_action(action)
-    await broadcast(payload)
-    return {"status": "ok", **payload}
+    broadcast(payload)
+    return jsonify({"status": "ok", **payload})
 
 
 @app.get("/status")
-async def get_status() -> dict:
+def get_status():
     """Return current app state."""
-    return {"status": app_state["status"], "action_log": app_state["action_log"]}
+    return jsonify({"status": app_state["status"], "action_log": app_state["action_log"]})
 
 
 # ── WebSocket endpoint ───────────────────────────────────────────────────────
-@app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket) -> None:
-    await ws.accept()
-    connected_clients.append(ws)
+@sock.route("/ws")
+def websocket_endpoint(ws) -> None:
+    with clients_lock:
+        connected_clients.append(ws)
     try:
         # Keep the connection alive; the server only pushes data.
         while True:
-            await asyncio.sleep(1)
-    except (WebSocketDisconnect, Exception):
+            ws.receive()
+    except Exception:
         pass
     finally:
-        if ws in connected_clients:
-            connected_clients.remove(ws)
+        with clients_lock:
+            if ws in connected_clients:
+                connected_clients.remove(ws)
 
 
 # ── Entrypoint ───────────────────────────────────────────────────────────────
-def _run_server_in_thread() -> uvicorn.Server:
-    """Start uvicorn in a daemon thread and return the Server instance."""
-    config = uvicorn.Config("dash:app", host="0.0.0.0", port=8000, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
+def _run_server_in_thread():
+    """Start Flask in a daemon thread and return the server instance."""
+    from werkzeug.serving import make_server
+
+    server = make_server("0.0.0.0", 8000, app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
 
@@ -175,7 +177,7 @@ def main() -> None:
     if args.action:
         _cli_action(args.action)
     elif args.serve:
-        uvicorn.run("dash:app", host="0.0.0.0", port=8000, reload=True)
+        app.run(host="0.0.0.0", port=8000)
     elif args.client:
         from client import DashApp
 
@@ -185,7 +187,7 @@ def main() -> None:
 
         server = _run_server_in_thread()
         DashApp().run()
-        server.should_exit = True
+        server.shutdown()
 
 
 if __name__ == "__main__":
