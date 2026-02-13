@@ -1,6 +1,6 @@
 # Dash
 
-Server, TUI, and CLI in one entry point. Built with **FastAPI** + **Textual**.
+Server, TUI, and CLI in one entry point. Built with **Flask** + **Textual**.
 
 ## Architecture
 
@@ -12,7 +12,7 @@ Server, TUI, and CLI in one entry point. Built with **FastAPI** + **Textual**.
 └──────────────┘   WS /ws              └──────────────┘
 ```
 
-- **`dash.py`** – FastAPI server, CLI dispatcher, and TUI launcher.
+- **`dash.py`** – Flask server, CLI dispatcher, and TUI launcher.
 - **`client.py`** – Textual TUI that connects over WebSocket and sends via HTTP POST.
 
 ## Setup
