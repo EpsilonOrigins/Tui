@@ -37,7 +37,15 @@ This starts the FastAPI server in the background and opens the TUI. When you qui
 python server.py --serve
 ```
 
-Runs just the server on `http://localhost:8000` (with hot-reload). Connect additional TUI clients from other terminals with `python client.py`.
+Runs just the server on `http://localhost:8000` (with hot-reload).
+
+**Detached TUI client only:**
+
+```bash
+python server.py --client
+```
+
+Connects a TUI to an already-running server. Use this to add extra clients when running in `--serve` mode.
 
 ## Usage
 

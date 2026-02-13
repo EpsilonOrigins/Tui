@@ -2,6 +2,7 @@
 
 Run with no arguments to start the server AND the TUI client together.
 Run with --serve for a headless server only.
+Run with --client to connect a TUI to an already-running server.
 """
 
 from __future__ import annotations
@@ -81,15 +82,25 @@ def _run_server_in_thread() -> uvicorn.Server:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="TUI WebSocket Example")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--serve",
         action="store_true",
         help="Run headless server only (no TUI)",
+    )
+    mode.add_argument(
+        "--client",
+        action="store_true",
+        help="Run TUI only, connecting to an already-running server",
     )
     args = parser.parse_args()
 
     if args.serve:
         uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    elif args.client:
+        from client import ChatApp
+
+        ChatApp().run()
     else:
         from client import ChatApp
 
