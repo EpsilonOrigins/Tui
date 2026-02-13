@@ -12,5 +12,4 @@ dependencies = [
 ]
 
 [project.scripts]
-start-server = "server:main"
-start-tui = "client:main"
+tui-chat = "server:main"

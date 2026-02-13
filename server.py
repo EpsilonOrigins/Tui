@@ -1,8 +1,14 @@
-"""FastAPI server with a REST endpoint and WebSocket broadcast."""
+"""FastAPI server with a REST endpoint and WebSocket broadcast.
+
+Run with no arguments to start the server AND the TUI client together.
+Run with --serve for a headless server only.
+"""
 
 from __future__ import annotations
 
+import argparse
 import asyncio
+import threading
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -64,8 +70,32 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
 
 # ── Entrypoint ───────────────────────────────────────────────────────────────
+def _run_server_in_thread() -> uvicorn.Server:
+    """Start uvicorn in a daemon thread and return the Server instance."""
+    config = uvicorn.Config("server:app", host="0.0.0.0", port=8000, log_level="warning")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    return server
+
+
 def main() -> None:
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    parser = argparse.ArgumentParser(description="TUI WebSocket Example")
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Run headless server only (no TUI)",
+    )
+    args = parser.parse_args()
+
+    if args.serve:
+        uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    else:
+        from client import ChatApp
+
+        server = _run_server_in_thread()
+        ChatApp().run()
+        server.should_exit = True
 
 
 if __name__ == "__main__":

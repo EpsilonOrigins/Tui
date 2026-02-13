@@ -23,21 +23,21 @@ pip install -e .
 
 ## Running
 
-**1. Start the server** (in one terminal):
+**Default — server + TUI together:**
 
 ```bash
 python server.py
 ```
 
-The server listens on `http://localhost:8000`.
+This starts the FastAPI server in the background and opens the TUI. When you quit the TUI (Ctrl+Q), the server shuts down with it.
 
-**2. Start the TUI client** (in another terminal):
+**Headless server only:**
 
 ```bash
-python client.py
+python server.py --serve
 ```
 
-Open multiple TUI instances to see messages broadcast across all clients.
+Runs just the server on `http://localhost:8000` (with hot-reload). Connect additional TUI clients from other terminals with `python client.py`.
 
 ## Usage
 
