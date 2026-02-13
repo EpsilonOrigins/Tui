@@ -3,6 +3,7 @@
 Run with no arguments to start the server AND the TUI client together.
 Run with --serve for a headless server only.
 Run with --client to connect a TUI to an already-running server.
+Run with an action name (launch/init/start/stop) to fire it against a running server.
 """
 
 from __future__ import annotations
@@ -132,8 +133,31 @@ def _run_server_in_thread() -> uvicorn.Server:
     return server
 
 
+def _cli_action(action: str) -> None:
+    """POST an action to a running server and print the result."""
+    import httpx
+
+    try:
+        resp = httpx.post(f"http://localhost:8000/actions/{action}")
+        resp.raise_for_status()
+        data = resp.json()
+        print(f"{action}: {data['previous_status']} -> {data['status']}")
+    except httpx.ConnectError:
+        print(f"Error: cannot connect to server at localhost:8000")
+        raise SystemExit(1)
+    except httpx.HTTPStatusError as exc:
+        print(f"Error: {exc.response.json().get('detail', exc)}")
+        raise SystemExit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="TUI WebSocket Example")
+    parser.add_argument(
+        "action",
+        nargs="?",
+        choices=VALID_ACTIONS,
+        help="Run an action against a running server and exit",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--serve",
@@ -147,7 +171,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.serve:
+    if args.action:
+        _cli_action(args.action)
+    elif args.serve:
         uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
     elif args.client:
         from client import ChatApp
