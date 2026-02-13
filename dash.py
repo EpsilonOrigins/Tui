@@ -1,9 +1,10 @@
-"""FastAPI server with a REST endpoint and WebSocket broadcast.
+"""Dash – server, TUI, and CLI in one entry point.
 
-Run with no arguments to start the server AND the TUI client together.
-Run with --serve for a headless server only.
-Run with --client to connect a TUI to an already-running server.
-Run with an action name (launch/init/start/stop) to fire it against a running server.
+Usage:
+  dash                            Server + TUI together (default)
+  dash --serve                    Headless server only
+  dash --client                   Detached TUI client
+  dash launch|init|start|stop     Fire action against a running server
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import uvicorn
 
-app = FastAPI(title="TUI WebSocket Example Server")
+app = FastAPI(title="Dash")
 
 # ── Connected WebSocket clients ──────────────────────────────────────────────
 connected_clients: list[WebSocket] = []
@@ -126,7 +127,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 # ── Entrypoint ───────────────────────────────────────────────────────────────
 def _run_server_in_thread() -> uvicorn.Server:
     """Start uvicorn in a daemon thread and return the Server instance."""
-    config = uvicorn.Config("server:app", host="0.0.0.0", port=8000, log_level="warning")
+    config = uvicorn.Config("dash:app", host="0.0.0.0", port=8000, log_level="warning")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -151,7 +152,7 @@ def _cli_action(action: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="TUI WebSocket Example")
+    parser = argparse.ArgumentParser(prog="dash", description="Dash – server, TUI, and CLI")
     parser.add_argument(
         "action",
         nargs="?",
@@ -174,16 +175,16 @@ def main() -> None:
     if args.action:
         _cli_action(args.action)
     elif args.serve:
-        uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+        uvicorn.run("dash:app", host="0.0.0.0", port=8000, reload=True)
     elif args.client:
-        from client import ChatApp
+        from client import DashApp
 
-        ChatApp().run()
+        DashApp().run()
     else:
-        from client import ChatApp
+        from client import DashApp
 
         server = _run_server_in_thread()
-        ChatApp().run()
+        DashApp().run()
         server.should_exit = True
 
 

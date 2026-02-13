@@ -1,7 +1,7 @@
 [project]
-name = "tui-websocket-example"
+name = "dash"
 version = "0.1.0"
-description = "Example app: Textual TUI client that posts to a FastAPI server and receives WebSocket updates"
+description = "Dash – server, TUI, and CLI in one entry point"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115",
@@ -12,4 +12,4 @@ dependencies = [
 ]
 
 [project.scripts]
-tui-chat = "server:main"
+dash = "dash:main"

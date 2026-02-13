@@ -1,5 +1,5 @@
-"""Textual TUI client that POSTs messages to the FastAPI server and receives
-WebSocket updates in real time.
+"""Dash TUI client – sends messages and commands to the Dash server,
+receives real-time WebSocket updates.
 
 Commands (type in the message input):
   /launch  /init  /start  /stop
@@ -22,8 +22,8 @@ WS_URL = "ws://localhost:8000/ws"
 COMMANDS = {"/launch", "/init", "/start", "/stop"}
 
 
-class ChatApp(App):
-    """A simple chat TUI that talks to a FastAPI backend."""
+class DashApp(App):
+    """Dash TUI client."""
 
     CSS = """
     #chat-log {
@@ -57,7 +57,7 @@ class ChatApp(App):
     ]
 
     def compose(self) -> ComposeResult:
-        yield Header(name="TUI Chat")
+        yield Header(name="Dash")
         yield Vertical(
             RichLog(id="chat-log", highlight=True, markup=True),
             Static("Connecting...", id="status"),
@@ -154,7 +154,7 @@ class ChatApp(App):
 
 
 def main() -> None:
-    ChatApp().run()
+    DashApp().run()
 
 
 if __name__ == "__main__":
