@@ -1,0 +1,15 @@
+[project]
+name = "dash"
+version = "0.1.0"
+description = "Dash – server, TUI, and CLI in one entry point"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "textual>=1.0",
+    "httpx>=0.28",
+    "websockets>=14.0",
+]
+
+[project.scripts]
+dash = "dash:main"
