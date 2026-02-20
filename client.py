@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 import httpx
 import websockets
@@ -17,8 +18,9 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
-SERVER_URL = "http://localhost:8000"
-WS_URL = "ws://localhost:8000/ws"
+_base = os.environ.get("DASH_SERVER_URL", "http://localhost:8000").rstrip("/")
+SERVER_URL = _base
+WS_URL = _base.replace("http://", "ws://", 1).replace("https://", "wss://", 1) + "/ws"
 COMMANDS = {"/launch", "/init", "/start", "/stop"}
 
 

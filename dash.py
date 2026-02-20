@@ -5,12 +5,21 @@ Usage:
   dash --serve                    Headless server only
   dash --client                   Detached TUI client
   dash launch|init|start|stop     Fire action against a running server
+
+Kubernetes / remote server configuration:
+  --server URL   Base URL of the Dash server (default: $DASH_SERVER_URL or http://localhost:8000)
+  --port PORT    Port to listen on in --serve mode (default: $DASH_PORT or 8000)
+
+  Environment variables:
+    DASH_SERVER_URL   Server base URL used by --client and action modes
+    DASH_PORT         Port used by --serve and default (server+TUI) mode
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import threading
 from datetime import datetime, timezone
 
@@ -126,27 +135,28 @@ def websocket_endpoint(ws) -> None:
 
 
 # ── Entrypoint ───────────────────────────────────────────────────────────────
-def _run_server_in_thread():
+def _run_server_in_thread(port: int = 8000):
     """Start Flask in a daemon thread and return the server instance."""
     from werkzeug.serving import make_server
 
-    server = make_server("0.0.0.0", 8000, app)
+    server = make_server("0.0.0.0", port, app)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
 
 
-def _cli_action(action: str) -> None:
+def _cli_action(action: str, server_url: str) -> None:
     """POST an action to a running server and print the result."""
     import httpx
 
+    base = server_url.rstrip("/")
     try:
-        resp = httpx.post(f"http://localhost:8000/actions/{action}")
+        resp = httpx.post(f"{base}/actions/{action}")
         resp.raise_for_status()
         data = resp.json()
         print(f"{action}: {data['previous_status']} -> {data['status']}")
     except httpx.ConnectError:
-        print(f"Error: cannot connect to server at localhost:8000")
+        print(f"Error: cannot connect to server at {base}")
         raise SystemExit(1)
     except httpx.HTTPStatusError as exc:
         print(f"Error: {exc.response.json().get('detail', exc)}")
@@ -154,12 +164,28 @@ def _cli_action(action: str) -> None:
 
 
 def main() -> None:
+    _default_server = os.environ.get("DASH_SERVER_URL", "http://localhost:8000")
+    _default_port = int(os.environ.get("DASH_PORT", "8000"))
+
     parser = argparse.ArgumentParser(prog="dash", description="Dash – server, TUI, and CLI")
     parser.add_argument(
         "action",
         nargs="?",
         choices=VALID_ACTIONS,
         help="Run an action against a running server and exit",
+    )
+    parser.add_argument(
+        "--server",
+        default=_default_server,
+        metavar="URL",
+        help="Server base URL for --client and action modes (default: $DASH_SERVER_URL or http://localhost:8000)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=_default_port,
+        metavar="PORT",
+        help="Port to listen on in --serve/default mode (default: $DASH_PORT or 8000)",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -175,17 +201,19 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.action:
-        _cli_action(args.action)
+        _cli_action(args.action, args.server)
     elif args.serve:
-        app.run(host="0.0.0.0", port=8000)
+        app.run(host="0.0.0.0", port=args.port)
     elif args.client:
+        os.environ["DASH_SERVER_URL"] = args.server
         from client import DashApp
 
         DashApp().run()
     else:
+        os.environ["DASH_SERVER_URL"] = f"http://localhost:{args.port}"
         from client import DashApp
 
-        server = _run_server_in_thread()
+        server = _run_server_in_thread(args.port)
         DashApp().run()
         server.shutdown()
 
